@@ -15,6 +15,7 @@ namespace BIS.WRP
     {
         public int Version { get; private set; }
         public int AppID { get; private set; }
+        public byte CompressionFlag { get; private set; }
         public int LandRangeX { get; private set; }
         public int LandRangeY { get; private set; }
         public int TerrainRangeX { get; private set; }
@@ -94,10 +95,40 @@ namespace BIS.WRP
             if (Version < 10) throw new NotSupportedException("OPRW file versions below 10 are not supported");
 
             if (Version >= 23) input.UseLZOCompression = true;
-            //if (version >= 25) input.UseCompressionFlag = true;
+
+            // DayZ (Enfusion-derived) OPRW v25+ writes a 4-byte sub-magic tag right
+            // after Version that no upstream Arma OPRW reader (this port included)
+            // accounts for. VERIFIED empirically 2026-09-22, hex dump of
+            // ChernarusPlus.wrp (v29, sha1 be544b6b18b43756a20d8b0c509e320abe801043),
+            // bytes[8..11] = 30 46 4E 45 = ASCII "0FNE" (read in reverse: "ENF0",
+            // i.e. Enforce-engine tag 0) -- matches
+            // repos/REFERENCE/DayZ-Modding-Knowledge-Pack/knowledge/vault-notes/
+            // dayz-wrp-roadgraph-extraction.md:47 ("Header: OPRW + int32 versión
+            // (28/29) + sub-magic 0FNE"). Without skipping it, this field's bytes
+            // were silently read AS AppID, and everything after (LandRangeX/Y,
+            // TerrainRangeX/Y, CellSize) decoded as garbage -- most dangerously
+            // NOT always an immediate crash: it also produced internally-consistent
+            // garbage (LandRangeX==LandRangeY, TerrainRangeX==TerrainRangeY) that
+            // passed the Debug.Assert below, then hung for 16+ minutes at ~0 CPU
+            // inside QuadTree's recursive reader (a garbage `flag` byte drives
+            // runaway recursion reading the rest of the 223MB file one node at a
+            // time) instead of failing loudly.
+            string subMagic = Version >= 25 ? input.ReadAscii(4) : null;
 
             if (Version >= 25)
+            {
                 AppID = input.ReadInt32();
+                // DayZ/newer-BI OPRW v25+ also writes one extra "compression flag"
+                // byte here that this port never read (the commented-out
+                // "UseCompressionFlag" line above is the origin of the gap).
+                // VERIFIED empirically 2026-09-22 against the same file: with BOTH
+                // the sub-magic and this byte skipped, LandRangeX/Y and
+                // TerrainRangeX/Y decode as 256/256 and 2048/2048 with
+                // CellSize=60.0 -- 256*60=15360m and 2048*7.5=15360m, matching
+                // Chernarus's known 15360m map extent exactly (fine cell size =
+                // CellSize / (TerrainRangeX/LandRangeX) = 60/8 = 7.5m).
+                CompressionFlag = input.ReadByte();
+            }
 
             if (Version >= 12)
             {
@@ -109,28 +140,38 @@ namespace BIS.WRP
                 Debug.Assert(LandRangeX == LandRangeY && TerrainRangeX == TerrainRangeY);
             }
 
+            Console.Error.WriteLine($"[DBG] subMagic={subMagic} AppID={AppID} CompressionFlag={CompressionFlag} LandRange={LandRangeX}x{LandRangeY} TerrainRange={TerrainRangeX}x{TerrainRangeY} CellSize={CellSize} pos={input.Position}");
+
             Geography = new QuadTree<GeographyInfo>(LandRangeX, LandRangeY, input, (src, off) => BitConverter.ToInt16(src, off), 2);
+            Console.Error.WriteLine($"[DBG] after Geography pos={input.Position}");
             //if(version<19) transformOldWaterInformation
 
             var soundMapCoef = 1; //ToDo: this is read from config
             SoundMap = new QuadTree<byte>(LandRangeX * soundMapCoef, LandRangeX * soundMapCoef, input, (src, off) => src[off], 1); //both landRangeX are correct. no mistake
+            Console.Error.WriteLine($"[DBG] after SoundMap pos={input.Position}");
 
             Mountains = input.ReadArray(inp => new Vector3P(inp));
+            Console.Error.WriteLine($"[DBG] after Mountains n={Mountains.Length} pos={input.Position}");
 
             Materials = new QuadTree<ushort>(LandRangeX, LandRangeY, input, (src, off) => BitConverter.ToUInt16(src, off), 2);
+            Console.Error.WriteLine($"[DBG] after Materials pos={input.Position}");
 
             if (Version < 21)
                 Random = input.ReadCompressed((uint)(LandRangeX * LandRangeY * 2)); //short values
 
             if (Version >= 18)
                 GrassApprox = input.ReadCompressed((uint)(TerrainRangeX * TerrainRangeY)); //byte values
+            Console.Error.WriteLine($"[DBG] after GrassApprox pos={input.Position}");
 
             if (Version >= 22)
                 PrimTexIndex = input.ReadCompressed((uint)(TerrainRangeX * TerrainRangeY)); //signed byte values?
+            Console.Error.WriteLine($"[DBG] after PrimTexIndex pos={input.Position}");
 
             Elevation = input.ReadCompressedFloats(TerrainRangeX * TerrainRangeY);
+            Console.Error.WriteLine($"[DBG] after Elevation pos={input.Position}");
 
             var nMaterials = input.ReadInt32();
+            Console.Error.WriteLine($"[DBG] nMaterials={nMaterials} pos={input.Position}");
             MatNames = new string[nMaterials];
             var major = new byte[nMaterials];
             for (int i = 0; i < nMaterials; i++)
@@ -138,13 +179,16 @@ namespace BIS.WRP
                 MatNames[i] = input.ReadAsciiz();
                 major[i] = input.ReadByte();
             }
+            Console.Error.WriteLine($"[DBG] after MatNames pos={input.Position}");
 
             Models = input.ReadStringArray();
+            Console.Error.WriteLine($"[DBG] after Models n={Models.Length} first={(Models.Length > 0 ? Models[0] : "")} pos={input.Position}");
 
             if (Version >= 15)
             {
                 EntityInfos = input.ReadArray(inp => new StaticEntityInfo(inp));
             }
+            Console.Error.WriteLine($"[DBG] after EntityInfos n={EntityInfos?.Length} pos={input.Position}");
 
             ObjectOffsets = new QuadTree<int>(LandRangeX, LandRangeY, input, (src, off) => BitConverter.ToInt32(src, off), 4);
             var sizeOfObjects = input.ReadInt32();

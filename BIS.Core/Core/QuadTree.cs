@@ -175,12 +175,22 @@ namespace BIS.Core
             private short flag;
             private IQuadTreeNode[] subTrees = new IQuadTreeNode[16];
 
-            public QuadTreeNode(BinaryReader input)
+            // DEBUG INSTRUMENTATION (2026-09-22, wrp_dump investigation) -- .NET
+            // cannot catch StackOverflowException, so a genuine desync here just
+            // kills the process with no diagnostic. Cap recursion at a generous
+            // depth and throw an ordinary, catchable exception instead.
+            private const int MaxDepth = 40;
+
+            public QuadTreeNode(BinaryReader input) : this(input, 0) { }
+
+            public QuadTreeNode(BinaryReader input, int depth)
             {
-                Read(input);
+                if (depth > MaxDepth)
+                    throw new InvalidOperationException($"QuadTreeNode recursion exceeded {MaxDepth} at stream pos {input.BaseStream.Position} -- almost certainly a stream desync, not a real quad tree.");
+                Read(input, depth);
             }
 
-            private void Read(BinaryReader input)
+            private void Read(BinaryReader input, int depth)
             {
                 flag = input.ReadInt16();
                 var bitMask = flag;
@@ -188,7 +198,7 @@ namespace BIS.Core
                 {
                     if ((bitMask & 1) == 1)
                     {
-                        subTrees[i] = new QuadTreeNode(input);
+                        subTrees[i] = new QuadTreeNode(input, depth + 1);
                     }
                     else
                     {
