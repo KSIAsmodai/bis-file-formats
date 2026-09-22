@@ -28,6 +28,7 @@ namespace BIS.WRP
         public Vector3P[] Positions { get; }
         public byte[] ConnectionTypes { get; }
         public int ObjectID { get; }
+        public uint ExtraV29 { get; }
         public string P3dPath { get; }
         public Matrix4P ToWorld { get; }
 
@@ -46,6 +47,22 @@ namespace BIS.WRP
             }
 
             ObjectID = input.ReadInt32();
+
+            // DayZ OPRW v29 extra field, same position/shape as StaticEntityInfo's
+            // (see StaticEntityInfo.cs) and matching the in-house vault note's
+            // documented v29 layout: "RoadLink = ConnectionCount + Positions[] +
+            // ConnectionTypes[] + ObjectID + extra_v29 (4 bytes) + asciiz P3dPath +
+            // Matrix4P (48B)" (repos/REFERENCE/DayZ-Modding-Knowledge-Pack/
+            // knowledge/vault-notes/dayz-wrp-roadgraph-extraction.md:51-52). Not yet
+            // independently hex-verified against ChernarusPlus.wrp this session
+            // (EntityInfos was; RoadNet parsing was not reached -- see
+            // WRP_PARSER.md 2026-09-22 session note) -- applied on the strength of
+            // the vault note's explicit spec plus the identical pattern just
+            // confirmed in StaticEntityInfo. Re-verify with hex evidence once
+            // RoadNet is reached; revert this one field if the byte counts don't
+            // line up.
+            if (input.Version >= 29)
+                ExtraV29 = input.ReadUInt32();
 
             if (input.Version >= 16)
             {
