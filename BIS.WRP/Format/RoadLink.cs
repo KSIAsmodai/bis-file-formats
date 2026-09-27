@@ -61,7 +61,10 @@ namespace BIS.WRP
             // confirmed in StaticEntityInfo. Re-verify with hex evidence once
             // RoadNet is reached; revert this one field if the byte counts don't
             // line up.
-            if (input.Version >= 29)
+            // 2026-09-26: gate lowered to v28 with StaticEntityInfo's (same
+            // field, see that file's correction note); the vault note itself
+            // calls the v28 and v29 layouts identical.
+            if (input.Version >= 28)
                 ExtraV29 = input.ReadUInt32();
 
             if (input.Version >= 16)

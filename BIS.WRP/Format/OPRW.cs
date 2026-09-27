@@ -113,21 +113,40 @@ namespace BIS.WRP
             // inside QuadTree's recursive reader (a garbage `flag` byte drives
             // runaway recursion reading the rest of the 223MB file one node at a
             // time) instead of failing loudly.
-            string subMagic = Version >= 25 ? input.ReadAscii(4) : null;
+            // 2026-09-26: the tag is DETECTED, not assumed from the version number.
+            // Arma 3 OPRW v25-27 carries no such tag (upstream read AppID straight
+            // after Version), so consuming 4 bytes unconditionally broke every
+            // non-DayZ v25+ file. Peek, keep it only if it is the "0FNE" tag.
+            string subMagic = null;
 
             if (Version >= 25)
             {
+                long tagPos = input.Position;
+                string tag = input.ReadAscii(4);
+                if (tag == "0FNE")
+                    subMagic = tag;
+                else
+                    input.Position = tagPos;
+
                 AppID = input.ReadInt32();
-                // DayZ/newer-BI OPRW v25+ also writes one extra "compression flag"
-                // byte here that this port never read (the commented-out
-                // "UseCompressionFlag" line above is the origin of the gap).
-                // VERIFIED empirically 2026-09-22 against the same file: with BOTH
-                // the sub-magic and this byte skipped, LandRangeX/Y and
+                // One extra byte after AppID, read as a "compression flag" (the
+                // commented-out "UseCompressionFlag" line above is the origin of
+                // the name; its meaning is not established).
+                // VERIFIED empirically 2026-09-22 against ChernarusPlus.wrp: with
+                // BOTH the sub-magic and this byte skipped, LandRangeX/Y and
                 // TerrainRangeX/Y decode as 256/256 and 2048/2048 with
                 // CellSize=60.0 -- 256*60=15360m and 2048*7.5=15360m, matching
-                // Chernarus's known 15360m map extent exactly (fine cell size =
-                // CellSize / (TerrainRangeX/LandRangeX) = 60/8 = 7.5m).
-                CompressionFlag = input.ReadByte();
+                // Chernarus's known 15360m map extent exactly.
+                // 2026-09-26 CORRECTION: the byte is v29-only, not v25+. Header hex
+                // of four DayZ files: v29 ChernarusPlus.wrp and enoch.wrp carry it
+                // (byte 16 = 00, LandRangeX follows at 17); v28 Chernarus2035.wrp
+                // and Alpen.wrp do NOT (LandRangeX sits at byte 16: 512 and 128).
+                // Reading it on v28 decoded LandRange=2x2 and hung the QuadTree
+                // reader. Whether the byte follows the version or AppID (both v29
+                // samples have AppID=1, both v28 have AppID=0) cannot be told
+                // apart from these four files; the version gate is the choice.
+                if (Version >= 29)
+                    CompressionFlag = input.ReadByte();
             }
 
             if (Version >= 12)
@@ -138,6 +157,19 @@ namespace BIS.WRP
                 TerrainRangeY = input.ReadInt32(); //same as x?
                 CellSize = input.ReadSingle();
                 Debug.Assert(LandRangeX == LandRangeY && TerrainRangeX == TerrainRangeY);
+
+                // 2026-09-26: fail loudly on a desynced header. A wrong header
+                // layout used to produce garbage grid sizes that sent the QuadTree
+                // and compressed-block readers into multi-minute hangs instead of
+                // an error (Alpen.wrp v28: >10 min at ~0 CPU before the v29-only
+                // gate above). Only rejects values no real terrain can have.
+                bool rangesOk = LandRangeX > 0 && LandRangeY > 0 && TerrainRangeX > 0 && TerrainRangeY > 0
+                    && LandRangeX <= 65536 && LandRangeY <= 65536 && TerrainRangeX <= 65536 && TerrainRangeY <= 65536
+                    && TerrainRangeX >= LandRangeX && TerrainRangeY >= LandRangeY
+                    && TerrainRangeX % LandRangeX == 0 && TerrainRangeY % LandRangeY == 0;
+                bool cellOk = float.IsFinite(CellSize) && CellSize > 0 && CellSize < 10000;
+                if (!rangesOk || !cellOk)
+                    throw new FormatException($"OPRW v{Version} header desync: LandRange={LandRangeX}x{LandRangeY} TerrainRange={TerrainRangeX}x{TerrainRangeY} CellSize={CellSize} (tag={subMagic ?? "none"}, AppID={AppID}, header ends at byte {input.Position})");
             }
 
             Console.Error.WriteLine($"[DBG] subMagic={subMagic} AppID={AppID} CompressionFlag={CompressionFlag} LandRange={LandRangeX}x{LandRangeY} TerrainRange={TerrainRangeX}x{TerrainRangeY} CellSize={CellSize} pos={input.Position}");

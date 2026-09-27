@@ -42,7 +42,15 @@ namespace BIS.WRP
             // 0x01") -- i.e. ObjectOffsets (the QuadTree<int> read immediately
             // after EntityInfos in OPRW.cs) now starts on genuinely QuadTree-shaped
             // data instead of mid-entity-text.
-            if (input.Version >= 29)
+            // 2026-09-26 CORRECTION: present from v28, not v29. Hex walk of
+            // Chernarus2035.wrp (OPRW v28, DayZ "0FNE" tag, sha1 d438e65c...):
+            // every one of the first five records is followed by 4 bytes with the
+            // same shape as v29's (0x80076000, 0x80079800, 0x800eb800, ...; high
+            // bit set) before the next "Land_..." ClassName. With the old >= 29
+            // gate that file desynced right after EntityInfos (QuadTree depth
+            // guard at byte 18,722,956). v28 and v29 appear only in DayZ; the
+            // Arma version list in OPRW.cs ends at 27.
+            if (input.Version >= 28)
                 ExtraV29 = input.ReadUInt32();
         }
     }
