@@ -92,7 +92,9 @@ namespace BIS.P3D.ODOL
             }
             if (Version > 6u) // NStages
             {
-                StageTextures = new StageTexture[input.ReadUInt32()];
+                var nStages = input.ReadUInt32();
+                input.CheckStreamCount(nStages, 1, "material stage count"); // no-op unless the opt-in guard is on
+                StageTextures = new StageTexture[nStages];
             }
             else
             {
@@ -100,7 +102,9 @@ namespace BIS.P3D.ODOL
             }
             if (Version > 8u) // NTexGens
             {
-                StageTransforms = new StageTransform[input.ReadUInt32()];
+                var nTexGens = input.ReadUInt32();
+                input.CheckStreamCount(nTexGens, 1, "material texgen count"); // no-op unless the opt-in guard is on
+                StageTransforms = new StageTransform[nTexGens];
             }
             else
             {

@@ -83,6 +83,7 @@ namespace BIS.P3D.ODOL
             var uvset0 = new UVSet(input, version);
             var uvSetCount = Math.Max(1u, input.ReadUInt32());
             Console.Error.WriteLine($"[LOD-READ] after_uvset({uvSetCount}): {input.Position}");
+            input.CheckStreamCount(uvSetCount - 1, 1, "UV set count"); // no-op unless the opt-in guard is on
             UvSets = new UVSet[uvSetCount];
             UvSets[0] = uvset0;
             for (int i = 1; i < UvSets.Length; ++i)

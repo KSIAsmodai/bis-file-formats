@@ -19,6 +19,36 @@ namespace BIS.Core.Streams
         //used to store file format versions (e.g. ODOL v60)
         public int Version { get; set; }
 
+        /// <summary>
+        /// Opt-in guard against damaged files. 0 (the default) changes nothing. Above 0, every array or
+        /// buffer size read from the stream is checked BEFORE anything is allocated: a count read straight
+        /// from this stream may not exceed the bytes left in it (each element takes at least one byte), and a
+        /// decompressed or default-filled buffer may not exceed MaxArrayBytes bytes. A failed check throws
+        /// InvalidDataException naming the stream position, instead of a multi-gigabyte allocation.
+        /// </summary>
+        public long MaxArrayBytes { get; set; }
+
+        /// <summary>With the guard on: refuse a count of elements read straight from this stream when even
+        /// minBytesEach bytes per element would run past the end of the stream. No-op when MaxArrayBytes is 0.</summary>
+        public void CheckStreamCount(long count, long minBytesEach, string what)
+        {
+            if (MaxArrayBytes <= 0)
+                return;
+            var left = BaseStream.Length - BaseStream.Position;
+            if (count < 0 || count * minBytesEach > left)
+                throw new InvalidDataException($"{what}: count {count} cannot fit in the {left} bytes left at stream position {BaseStream.Position} (damaged file or stream desync)");
+        }
+
+        /// <summary>With the guard on: refuse a buffer of count x elementBytes bytes above MaxArrayBytes.
+        /// No-op when MaxArrayBytes is 0.</summary>
+        public void CheckAllocation(long count, long elementBytes, string what)
+        {
+            if (MaxArrayBytes <= 0)
+                return;
+            if (count < 0 || count * elementBytes > MaxArrayBytes)
+                throw new InvalidDataException($"{what}: {count} x {elementBytes} bytes is over the {MaxArrayBytes}-byte cap at stream position {BaseStream.Position} (damaged file or stream desync)");
+        }
+
         public long Position
         {
             get
@@ -48,6 +78,7 @@ namespace BIS.Core.Streams
 
         public string ReadAscii(int count)
         {
+            CheckStreamCount(count, 1, "string length");
             byte[] buffer = new byte[count];
             BaseStream.ReadExactly(buffer, 0, count);
             return Encoding.ASCII.GetString(buffer);
@@ -155,6 +186,7 @@ namespace BIS.Core.Streams
         #region SimpleArray
         public T[] ReadArrayBase<T>(Func<BinaryReaderEx, T> readElement, int size)
         {
+            CheckStreamCount(size, 1, "array count");
             var array = new T[size];
             for (int i = 0; i < size; i++)
                 array[i] = readElement(this);
@@ -184,6 +216,7 @@ namespace BIS.Core.Streams
         public short[] ReadCompressedShortArray()
         {
             int nElements = ReadInt32();
+            CheckAllocation(nElements, 2, "compressed short array");
             var expected = (uint)(nElements * 2);
             var decompressed = ReadCompressed(expected);
             var result = new short[nElements];
@@ -194,6 +227,7 @@ namespace BIS.Core.Streams
         public int[] ReadCompressedIntArray()
         {
             int nElements = ReadInt32();
+            CheckAllocation(nElements, 4, "compressed int array");
             var expected = (uint)(nElements * 4);
             var decompressed = ReadCompressed(expected);
             var result = new int[nElements];
@@ -204,6 +238,7 @@ namespace BIS.Core.Streams
         public float[] ReadCompressedFloatArray()
         {
             int nElements = ReadInt32();
+            CheckAllocation(nElements, 4, "compressed float array");
             var expected = (uint)(nElements * 4);
             var decompressed = ReadCompressed(expected);
             var result = new float[nElements];
@@ -228,6 +263,7 @@ namespace BIS.Core.Streams
         public T[] ReadCondensedArray<T>(Func<BinaryReaderEx, T> readElement, int sizeOfT)
         {
             int size = ReadInt32();
+            CheckAllocation(size, sizeOfT, "condensed array");
             T[] result = new T[size];
             bool defaultFill = ReadBoolean();
             if (defaultFill)
@@ -286,6 +322,7 @@ namespace BIS.Core.Streams
             {
                 return new byte[0];
             }
+            CheckAllocation(expectedSize, 1, "compressed block");
 
             if (UseLZOCompression) return ReadLZO(expectedSize, forceCompressed);
 
@@ -348,6 +385,8 @@ namespace BIS.Core.Streams
 
         public byte[] ReadCompressedIndices(int bytesToRead, uint expectedSize)
         {
+            CheckStreamCount(bytesToRead, 1, "compressed index bytes");
+            CheckAllocation(expectedSize, 1, "compressed indices");
             var result = new byte[expectedSize];
             int outputI = 0;
             for (int i = 0; i < bytesToRead; i++)
@@ -375,6 +414,7 @@ namespace BIS.Core.Streams
         public float[] ReadCompressedFloats(int nElements)
         {
             if (nElements == 0) return [];
+            CheckAllocation(nElements, 4, "compressed floats");
             var expected = (uint)(nElements * 4);
             var decompressed = ReadCompressed(expected);
             var result = new float[nElements];
@@ -394,6 +434,7 @@ namespace BIS.Core.Streams
 
         public T[] ReadCompressed<T>(Func<BinaryReaderEx, T> readElement, int nElements, int elemSize)
         {
+            CheckAllocation(nElements, elemSize, "compressed array");
             var expectedDataSize = (uint)(nElements * elemSize);
             var stream = new BinaryReaderEx(new MemoryStream(ReadCompressed(expectedDataSize)));
             return stream.ReadArrayBase(readElement, nElements);

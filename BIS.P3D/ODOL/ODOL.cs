@@ -19,6 +19,13 @@ namespace BIS.P3D.ODOL
         /// <summary>Field layout to read with. Set before reading; Default keeps the original behaviour.</summary>
         public OdolLayout Layout { get; set; } = OdolLayout.Default;
 
+        /// <summary>The file's per-LOD address table as read (start and end byte of each LOD, the permanent
+        /// flags), and the stream position where each LOD body read actually stopped. Null before Read.</summary>
+        public uint[] LodStartAddresses { get; private set; }
+        public uint[] LodEndAddresses { get; private set; }
+        public bool[] LodPermanent { get; private set; }
+        public long[] LodReadEnds { get; private set; }
+
         public void Read(BinaryReaderEx input)
         {
             if (input.ReadAscii(4) != "ODOL")
@@ -83,6 +90,13 @@ namespace BIS.P3D.ODOL
 
         internal void ReadContent(BinaryReaderEx input)
         {
+            if (Layout == OdolLayout.DayZ && input.MaxArrayBytes == 0)
+            {
+                // Damaged-file guard (see BinaryReaderEx.MaxArrayBytes), on for the DayZ layout only. An
+                // LZO block can expand at most ~255x (each zero byte of a run adds 255, LZO.cs:43-45), so no
+                // decompressed buffer can honestly exceed 256 x the file size; the 64 KiB covers tiny files.
+                input.MaxArrayBytes = 256L * input.BaseStream.Length + 65536;
+            }
             var resolutions = ReadHeaderOnly(input);
 
             var noOfLods = resolutions.Length;
@@ -101,6 +115,10 @@ namespace BIS.P3D.ODOL
             var lodStartAdresses = input.ReadArrayBase(r => r.ReadUInt32(), noOfLods);
             var lodEndAdresses = input.ReadArrayBase(r => r.ReadUInt32(), noOfLods);
             var permanent = input.ReadArrayBase(r => r.ReadBoolean(), noOfLods);
+            LodStartAddresses = lodStartAdresses;
+            LodEndAddresses = lodEndAdresses;
+            LodPermanent = permanent;
+            LodReadEnds = new long[noOfLods];
             var loadableLodInfo = new LoadableLodInfo[noOfLods];
             for (int m = 0; m < noOfLods; m++)
             {
@@ -113,6 +131,7 @@ namespace BIS.P3D.ODOL
             {
                 input.Position = lodStartAdresses[m];
                 Lods[m] = new LOD(input, resolutions[m], loadableLodInfo[m], Version, Layout == OdolLayout.DayZ);
+                LodReadEnds[m] = input.Position;
                 if (input.Position != lodEndAdresses[m])
                 {
                     Trace.TraceWarning($"LOD {resolutions[m]} end mismatch. Expected={lodEndAdresses[m]} Actual={input.Position}");
