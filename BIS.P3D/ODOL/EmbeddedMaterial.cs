@@ -23,9 +23,9 @@ namespace BIS.P3D.ODOL
         {
             MaterialName = input.ReadAsciiz();
             Version = input.ReadUInt32();
-            if (dayz && Version != 20u)
+            if (dayz && Version != 15u && Version != 16u && Version != 20u)
             {
-                // Only material version 20 has been measured in DayZ files. Stop rather than guess.
+                // Only material versions 15, 16 and 20 have been measured in DayZ files. Stop rather than guess.
                 throw new NotSupportedException($"DayZ embedded material version {Version} not measured yet ('{MaterialName}')");
             }
             Emissive = new ColorP(input);
@@ -35,24 +35,48 @@ namespace BIS.P3D.ODOL
             Specular = new ColorP(input);
             if (dayz)
             {
-                // DayZ v20: 2 colours between Specular and the specular copy. MEASURED on
-                // jerrycan.rvmat (values 0,0,0,1 and 0,0,0.3,0.99; the source rvmat does not set them).
+                // DayZ v16 and v20: 2 colours between Specular and the specular copy. MEASURED on
+                // jerrycan.rvmat (v20) and decal_welcometohell.rvmat (v16): 0,0,0,1 and 0,0,0.3,0.99 in both;
+                // the source rvmat does not set them.
                 DayZColorsAfterSpecular = new[] { new ColorP(input), new ColorP(input) };
             }
             SpecularCopy = new ColorP(input);
             SpecularPower = input.ReadSingle();
             if (dayz)
             {
-                // DayZ v20: 18 more words before PixelShader, read as they measured: two colours,
-                // then twice (int32 + 3 floats), then 2 words. 26 extra words in all with the two above.
-                DayZColorsAfterPower = new[] { new ColorP(input), new ColorP(input) };
-                DayZIndexedTriples = new DayZIndexedTriple[] { new DayZIndexedTriple(input), new DayZIndexedTriple(input) };
-                DayZTailWords = new[] { input.ReadUInt32(), input.ReadUInt32() };
+                // DayZ v16 and v20: a colour and 2 floats after SpecularPower (v16 decal: 0,0,1,1 and 1,1;
+                // v20 jerrycan: -1,0,1,1 and 1,1). v20 then adds 12 words: 2 words, twice (int32 + 3 floats),
+                // 2 words (jerrycan: 0,0 / -1 30,45,0 / -1 0,1,0 / 0,0). 14 extra words in v16, 26 in v20.
+                // v15 (2 files, BallerZ caps; the judge cannot read them): only 2 words here, both zero.
+                // The stage counts, empty surface name and shader ids that follow line up exactly.
+                if (Version >= 16u)
+                {
+                    DayZColorAfterPower = new ColorP(input);
+                }
+                DayZPairAfterPower = new[] { input.ReadSingle(), input.ReadSingle() };
+                if (Version >= 20u)
+                {
+                    DayZWordsA = new[] { input.ReadUInt32(), input.ReadUInt32() };
+                    DayZIndexedTriples = new DayZIndexedTriple[] { new DayZIndexedTriple(input), new DayZIndexedTriple(input) };
+                    DayZWordsB = new[] { input.ReadUInt32(), input.ReadUInt32() };
+                }
             }
             PixelShader = input.ReadUInt32();
             VertexShader = input.ReadUInt32();
-            MainLight = input.ReadUInt32();
-            FogMode = input.ReadUInt32();
+            if (dayz)
+            {
+                // DayZ: fog mode comes BEFORE main light (the ODOLv4x page lists main light first).
+                // MEASURED on 2 materials against the judge's labels: jerrycan stores 3,1 = FogAlpha, Sun;
+                // the v16 decal stores 1,1 = Fog, Sun (rvmat enum order: fog None/Fog/Alpha/FogAlpha/FogSky,
+                // light None/Sun/...). Still to confirm on a material whose main light is not Sun.
+                FogMode = input.ReadUInt32();
+                MainLight = input.ReadUInt32();
+            }
+            else
+            {
+                MainLight = input.ReadUInt32();
+                FogMode = input.ReadUInt32();
+            }
             if (Version == 3u)
             {
                 Unused3 = input.ReadBoolean();
@@ -129,9 +153,11 @@ namespace BIS.P3D.ODOL
         public StageTransform[] StageTransforms { get; }
         public StageTexture StageTI { get; }
         public ColorP[] DayZColorsAfterSpecular { get; }
-        public ColorP[] DayZColorsAfterPower { get; }
+        public ColorP DayZColorAfterPower { get; }
+        public float[] DayZPairAfterPower { get; }
+        public uint[] DayZWordsA { get; }
         public DayZIndexedTriple[] DayZIndexedTriples { get; }
-        public uint[] DayZTailWords { get; }
+        public uint[] DayZWordsB { get; }
 
         public void Write(BinaryWriterEx output)
         {

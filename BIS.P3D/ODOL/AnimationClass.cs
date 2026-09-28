@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using BIS.Core.Math;
 using BIS.Core.Streams;
 
@@ -6,7 +6,7 @@ namespace BIS.P3D.ODOL
 {
     public class AnimationClass
     {
-        internal AnimationClass(BinaryReaderEx input, int version)
+        internal AnimationClass(BinaryReaderEx input, int version, bool dayz = false)
         {
             AnimType = input.ReadUInt32();
             AnimName = input.ReadAsciiz();
@@ -46,7 +46,10 @@ namespace BIS.P3D.ODOL
                     return;
                 case 9:
                     HideValue = input.ReadSingle();
-                    if (version >= 55)
+                    // DayZ: a hide animation has ONE float in v54 and v55 alike. MEASURED: the Gyrocopter
+                    // (v55) reads all 26 classes cleanly with one float; tools\parse_odol_anims.js found the
+                    // same for v54 (uh1h.p3d).
+                    if (version >= 55 && !dayz)
                     {
                         Unused55 = input.ReadSingle();
                         return;

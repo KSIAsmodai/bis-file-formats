@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using BIS.Core.Math;
 using BIS.Core.Streams;
 
@@ -6,9 +6,9 @@ namespace BIS.P3D.ODOL
 {
     public class Animations
     {
-        internal Animations(BinaryReaderEx input, int version)
+        internal Animations(BinaryReaderEx input, int version, bool dayz = false)
         {
-            AnimationClasses = input.ReadArray(i => new AnimationClass(i, version));
+            AnimationClasses = input.ReadArray(i => new AnimationClass(i, version, dayz));
             Bones2Anims = input.ReadArray(i => i.ReadArray(j => j.ReadArray(k => k.ReadUInt32())));
 
             Anims2Bones = new int[Bones2Anims.Length][];

@@ -152,7 +152,7 @@ namespace BIS.P3D.ODOL
 
         public float Resolution { get; }
         internal LoadableLodInfo LoadableLodInfo { get; }
-        internal Proxy[] RawProxies { get; }
+        public Proxy[] RawProxies { get; }
         public int[] SubSkeletonsToSkeleton { get; }
         internal SubSkeletonIndexSet[] SkeletonToSubSkeleton { get; }
         public uint VertexCount { get; }

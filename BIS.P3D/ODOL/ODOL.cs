@@ -29,6 +29,11 @@ namespace BIS.P3D.ODOL
 
         public void Write(BinaryWriterEx output)
         {
+            if (Layout == OdolLayout.DayZ)
+            {
+                // The DayZ layout is read-only here: the writers do not emit every DayZ field.
+                throw new NotSupportedException("Writing the DayZ ODOL layout is not supported");
+            }
             output.WriteAscii("ODOL", 4);
             WriteContent(output);
         }
@@ -89,7 +94,7 @@ namespace BIS.P3D.ODOL
                 Trace.TraceInformation($"ODOL hasAnims={hasAnims}");
                 if (hasAnims)
                 {
-                    Animations = new Animations(input, Version);
+                    Animations = new Animations(input, Version, Layout == OdolLayout.DayZ);
                     Trace.TraceInformation($"ODOL after Animations: {input.Position} ({Animations.AnimationClasses.Length} classes, {Animations.Bones2Anims.Length} lod entries)");
                 }
             }
