@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -13,7 +13,7 @@ namespace BIS.P3D.ODOL
         private string[] _selections;
         private string[] _proxies;
 
-        internal LOD(BinaryReaderEx input, float resolution, LoadableLodInfo loadableLodInfo, int version)
+        internal LOD(BinaryReaderEx input, float resolution, LoadableLodInfo loadableLodInfo, int version, bool dayz = false)
         {
             var st = input.Position;
 
@@ -43,7 +43,7 @@ namespace BIS.P3D.ODOL
             Console.Error.WriteLine($"[LOD-READ] after_bounds: {input.Position} (st={st})");
             Textures = input.ReadStringArray();
             Console.Error.WriteLine($"[LOD-READ] after_textures: {input.Position}");
-            Materials = input.ReadArray(i => new EmbeddedMaterial(i));
+            Materials = input.ReadArray(i => new EmbeddedMaterial(i, dayz));
             Console.Error.WriteLine($"[LOD-READ] after_materials: {input.Position}");
 
             PointToVertex = ReadCompressedVertexIndexArray(input, version);
@@ -113,6 +113,12 @@ namespace BIS.P3D.ODOL
             }
             var endOfDataPosition = input.Position;
             var sizeOfRestDataReal = endOfDataPosition - sizeOfRestDataPos - 4;
+            if (dayz)
+            {
+                // DayZ counts the 4-byte size field itself. MEASURED: stored = read + 4 on every lod of
+                // the 5 test files, and each lod still ends exactly at its table end address.
+                sizeOfRestDataReal += 4;
+            }
             if (sizeOfRestDataReal != sizeOfRestData)
             {
                 Trace.TraceWarning($"LOD {Resolution} SizeOfRestData invalid: Expected={sizeOfRestData}, Actual={sizeOfRestDataReal}");

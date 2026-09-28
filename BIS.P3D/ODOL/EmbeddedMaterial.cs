@@ -1,21 +1,54 @@
-﻿using BIS.Core;
+using System;
+using BIS.Core;
 using BIS.Core.Streams;
 
 namespace BIS.P3D.ODOL
 {
+    /// <summary>DayZ material extra: an int32 then three floats (measured: -1 then 30,45,0 and -1 then 0,1,0).</summary>
+    public class DayZIndexedTriple
+    {
+        internal DayZIndexedTriple(BinaryReaderEx input)
+        {
+            Index = input.ReadInt32();
+            Values = new[] { input.ReadSingle(), input.ReadSingle(), input.ReadSingle() };
+        }
+
+        public int Index { get; }
+        public float[] Values { get; }
+    }
+
     public class EmbeddedMaterial
     {
-        public EmbeddedMaterial(BinaryReaderEx input)
+        public EmbeddedMaterial(BinaryReaderEx input, bool dayz = false)
         {
             MaterialName = input.ReadAsciiz();
             Version = input.ReadUInt32();
+            if (dayz && Version != 20u)
+            {
+                // Only material version 20 has been measured in DayZ files. Stop rather than guess.
+                throw new NotSupportedException($"DayZ embedded material version {Version} not measured yet ('{MaterialName}')");
+            }
             Emissive = new ColorP(input);
             Ambient = new ColorP(input);
             Diffuse = new ColorP(input);
             ForcedDiffuse = new ColorP(input);
             Specular = new ColorP(input);
+            if (dayz)
+            {
+                // DayZ v20: 2 colours between Specular and the specular copy. MEASURED on
+                // jerrycan.rvmat (values 0,0,0,1 and 0,0,0.3,0.99; the source rvmat does not set them).
+                DayZColorsAfterSpecular = new[] { new ColorP(input), new ColorP(input) };
+            }
             SpecularCopy = new ColorP(input);
             SpecularPower = input.ReadSingle();
+            if (dayz)
+            {
+                // DayZ v20: 18 more words before PixelShader, read as they measured: two colours,
+                // then twice (int32 + 3 floats), then 2 words. 26 extra words in all with the two above.
+                DayZColorsAfterPower = new[] { new ColorP(input), new ColorP(input) };
+                DayZIndexedTriples = new DayZIndexedTriple[] { new DayZIndexedTriple(input), new DayZIndexedTriple(input) };
+                DayZTailWords = new[] { input.ReadUInt32(), input.ReadUInt32() };
+            }
             PixelShader = input.ReadUInt32();
             VertexShader = input.ReadUInt32();
             MainLight = input.ReadUInt32();
@@ -95,6 +128,10 @@ namespace BIS.P3D.ODOL
         public StageTexture[] StageTextures { get; }
         public StageTransform[] StageTransforms { get; }
         public StageTexture StageTI { get; }
+        public ColorP[] DayZColorsAfterSpecular { get; }
+        public ColorP[] DayZColorsAfterPower { get; }
+        public DayZIndexedTriple[] DayZIndexedTriples { get; }
+        public uint[] DayZTailWords { get; }
 
         public void Write(BinaryWriterEx output)
         {

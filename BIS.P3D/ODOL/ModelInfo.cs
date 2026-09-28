@@ -1,4 +1,4 @@
-﻿using BIS.Core;
+using BIS.Core;
 using BIS.Core.Math;
 using BIS.Core.Streams;
 
@@ -6,8 +6,9 @@ namespace BIS.P3D.ODOL
 {
     public class ModelInfo : IModelInfo
     {
-        internal ModelInfo(BinaryReaderEx input, int version, int noOfLods)
+        internal ModelInfo(BinaryReaderEx input, int version, int noOfLods, bool dayz = false)
         {
+            DayZLayout = dayz;
             Special = input.ReadInt32();
             BoundingSphere = input.ReadSingle();
             GeometrySphere = input.ReadSingle();
@@ -41,6 +42,14 @@ namespace BIS.P3D.ODOL
             LockAutoCenter = input.ReadBoolean();
             CanOcclude = input.ReadBoolean();
             CanBeOccluded = input.ReadBoolean();
+            if (dayz)
+            {
+                // DayZ: 5 bytes here that the Arma layout does not have. Position MEASURED on
+                // 5 DayZ files (v53, v54 x3, v55): byte = 1 and float = 1.0 in all of them.
+                // Meaning not known yet, so the names say only where they sit.
+                DayZExtraByte = input.ReadByte();
+                DayZExtraFloat = input.ReadSingle();
+            }
             if (version >= 73)
             {
                 AICovers = input.ReadBoolean();
@@ -82,16 +91,23 @@ namespace BIS.P3D.ODOL
             {
                 ExplosionShielding = input.ReadSingle();
             }
-            if (version >= 53)
+            if (version >= 53 && !dayz)
             {
                 GeometrySimple = input.ReadByte();
             }
-            if (version >= 54)
+            if (version >= 54 && !dayz)
             {
                 GeometryPhys = input.ReadByte();
             }
             Memory = input.ReadByte();
             Geometry = input.ReadByte();
+            if (dayz && version >= 54)
+            {
+                // DayZ v54+: one lod-index byte between Geometry and GeometryFire (0xFF = none
+                // in every file measured). v53 files are one byte shorter; which lod it names
+                // is not known yet.
+                DayZExtraLodIndex = input.ReadByte();
+            }
             GeometryFire = input.ReadByte();
             GeometryView = input.ReadByte();
             GeometryViewPilot = input.ReadByte();
@@ -113,6 +129,14 @@ namespace BIS.P3D.ODOL
             if (version >= 31)
             {
                 Unused31 = input.ReadUInt32();
+            }
+            if (dayz && version >= 55)
+            {
+                // DayZ v55: one more byte in the zero run after Class. MEASURED on all 749 v55 files
+                // we hold: the 7 bytes after the Class string are zero in every one, and the byte
+                // after them is 0 or 1 (the has-animations flag). Where in the run it sits cannot
+                // be told from zeros; it is read last.
+                DayZV55Byte = input.ReadByte();
             }
             if (version >= 57)
             {
@@ -157,6 +181,11 @@ namespace BIS.P3D.ODOL
             output.Write(LockAutoCenter);
             output.Write(CanOcclude);
             output.Write(CanBeOccluded);
+            if (DayZLayout)
+            {
+                output.Write(DayZExtraByte);
+                output.Write(DayZExtraFloat);
+            }
             if (version >= 73)
             {
                 output.Write(AICovers);
@@ -198,16 +227,20 @@ namespace BIS.P3D.ODOL
             {
                 output.Write(ExplosionShielding);
             }
-            if (version >= 53)
+            if (version >= 53 && !DayZLayout)
             {
                 output.Write(GeometrySimple);
             }
-            if (version >= 54)
+            if (version >= 54 && !DayZLayout)
             {
                 output.Write(GeometryPhys);
             }
             output.Write(Memory);
             output.Write(Geometry);
+            if (DayZLayout && version >= 54)
+            {
+                output.Write(DayZExtraLodIndex);
+            }
             output.Write(GeometryFire);
             output.Write(GeometryView);
             output.Write(GeometryViewPilot);
@@ -229,6 +262,10 @@ namespace BIS.P3D.ODOL
             if (version >= 31)
             {
                 output.Write(Unused31);
+            }
+            if (DayZLayout && version >= 55)
+            {
+                output.Write(DayZV55Byte);
             }
             if (version >= 57)
             {
@@ -306,5 +343,10 @@ namespace BIS.P3D.ODOL
         public int[] PreferredShadowBufferLod { get; }
         public int[] PreferredShadowBufferLodVis { get; }
         public uint Unused31 { get; }
+        public bool DayZLayout { get; }
+        public byte DayZExtraByte { get; }
+        public float DayZExtraFloat { get; }
+        public byte DayZExtraLodIndex { get; }
+        public byte DayZV55Byte { get; }
     }
 }

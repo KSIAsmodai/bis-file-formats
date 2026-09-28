@@ -1,4 +1,4 @@
-﻿using BIS.Core.Math;
+using BIS.Core.Math;
 using BIS.Core.Streams;
 using System;
 using System.Collections.Generic;
@@ -15,6 +15,14 @@ namespace BIS.P3D
         public P3D(Stream stream) : this(new BinaryReaderEx(stream)) { }
 
         public P3D(BinaryReaderEx input) { Read(input); }
+
+        /// <summary>Read a p3d; a binarized one is read with the given ODOL field layout.</summary>
+        public P3D(Stream stream, ODOL.OdolLayout layout) : this(new BinaryReaderEx(stream), layout) { }
+
+        public P3D(BinaryReaderEx input, ODOL.OdolLayout layout) { odolLayout = layout; Read(input); }
+
+        // Default (0) unless a layout is passed; the property named ODOL hides the namespace in expressions.
+        private readonly BIS.P3D.ODOL.OdolLayout odolLayout;
 
         public IModelInfo ModelInfo =>
             binarized?.ModelInfo
@@ -73,7 +81,7 @@ namespace BIS.P3D
             switch (signature)
             {
                 case "ODOL":
-                    binarized = new ODOL.ODOL();
+                    binarized = new ODOL.ODOL { Layout = odolLayout };
                     binarized.ReadContent(input);
                     editable = null;
                     break;

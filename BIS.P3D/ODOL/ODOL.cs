@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Linq;
 using BIS.Core.Streams;
@@ -15,6 +15,9 @@ namespace BIS.P3D.ODOL
         public byte[] Extra { get; private set; }
         public LOD[] Lods { get; set; }
         public Animations Animations { get; private set; }
+
+        /// <summary>Field layout to read with. Set before reading; Default keeps the original behaviour.</summary>
+        public OdolLayout Layout { get; set; } = OdolLayout.Default;
 
         public void Read(BinaryReaderEx input)
         {
@@ -68,7 +71,7 @@ namespace BIS.P3D.ODOL
 
             Lods = new LOD[noOfLods];
 
-            ModelInfo = new ModelInfo(input, Version, noOfLods);
+            ModelInfo = new ModelInfo(input, Version, noOfLods, Layout == OdolLayout.DayZ);
 
             return resolutions;
         }
@@ -79,12 +82,15 @@ namespace BIS.P3D.ODOL
 
             var noOfLods = resolutions.Length;
 
+            Trace.TraceInformation($"ODOL after ModelInfo: {input.Position}");
             if (Version >= 30u)
             {
                 var hasAnims = input.ReadBoolean();
+                Trace.TraceInformation($"ODOL hasAnims={hasAnims}");
                 if (hasAnims)
                 {
                     Animations = new Animations(input, Version);
+                    Trace.TraceInformation($"ODOL after Animations: {input.Position} ({Animations.AnimationClasses.Length} classes, {Animations.Bones2Anims.Length} lod entries)");
                 }
             }
             var lodStartAdresses = input.ReadArrayBase(r => r.ReadUInt32(), noOfLods);
@@ -101,7 +107,7 @@ namespace BIS.P3D.ODOL
             for (int m = 0; m < noOfLods; m++)
             {
                 input.Position = lodStartAdresses[m];
-                Lods[m] = new LOD(input, resolutions[m], loadableLodInfo[m], Version);
+                Lods[m] = new LOD(input, resolutions[m], loadableLodInfo[m], Version, Layout == OdolLayout.DayZ);
                 if (input.Position != lodEndAdresses[m])
                 {
                     Trace.TraceWarning($"LOD {resolutions[m]} end mismatch. Expected={lodEndAdresses[m]} Actual={input.Position}");
